@@ -1,0 +1,361 @@
+---
+title: "Advanced R Final Project 2020"
+author: "Vivekanand Kulkarni - (19200231)"
+date: "15 August 2020"
+output:
+  html_document: default
+  pdf_document: default
+editor_options: 
+  chunk_output_type: inline
+runtime: shiny
+---
+
+# Questions:
+
+1. Import the dataset exo_data.csv as a tibble.  Columns 2, 14 should be factors. Column 15 should be integers. The
+remaining columns should be doubles.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+# Importing required Libraries and reading csv
+library(readr)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(shiny)
+library(rstan)
+library(shinystan)
+library(ggiraph)
+library(gganimate)
+library(reshape2)
+library(tidyr)
+library(ggmap)
+Exo_data <- read_csv("exo_data.csv")
+```
+Columns 1, 16, 17, 18, 25 should be
+characters.Columns 2, 14 should be factors. 
+Column 15 should be integers. 
+The remaining columns should be doubles.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+# Checking the structure of the data
+str(Exo_data)
+```
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+# Columns 1 is a character.
+typeof(Exo_data$id)=="character"
+
+#Column 16 is a character
+typeof(Exo_data$recency)=="character"
+
+#Column 17 is a character
+typeof(Exo_data$r_asc)=="character"
+
+#Column 18 is a character
+typeof(Exo_data$decl)=="character"
+
+#Column 25 is a character
+typeof(Exo_data$lists)=="character"
+
+#Column 2= flag is made a factor
+Exo_data$flag %<>% as.factor
+
+#Column 14 is made a factor
+Exo_data$meth %<>% as.factor
+
+#Column 15= year is made integer
+Exo_data$year %<>% as.integer
+
+```
+2. Exclude the exoplanets with an unknown method of discovery.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+Exo_data <- drop_na(Exo_data, meth)
+```
+
+3. Create a graphic which illustrates the relationship between the log-distances from
+the Sun and the methods of discovery.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+ggplot(Exo_data, aes(x = log(dist)))+ theme_light()+ geom_histogram(aes(color = meth, fill= meth), position = "identity", bins = 50, alpha=0.5)+ labs(title ="Log-Dist from Sun Graphic",x="Log-Dist from Sun (parsec)", y = "Count")
+```
+4. Create scatterplots of the log-mass versus log-distances, separating by methods of
+discovery. Hovering with the cursor highlights the point and displays its name, and,
+if you click, the exoplanet’s page on the Open Exoplanet Catalogue will be opened.
+(paste the id after http://www.openexoplanetcatalogue.com/planet/ ).
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+Exo_data$onclick <- sprintf("window.open(\"%s%s\")",
+                        "http://www.openexoplanetcatalogue.com/planet/",
+                        Exo_data$id)
+
+gg_graph = ggplot(Exo_data,
+                  aes(x = log(mass),
+                      y = log(dist),
+                      color = meth))+theme_dark()+
+                  xlab('Log(Mass)') +
+                  ylab('Log(Dist') +
+                  scale_color_discrete(name="Discovery Methods")+
+                  geom_point_interactive(aes(data_id = id,
+                             tooltip = id,
+                             onclick = onclick))+
+                  labs(title="Scatterplots of Log-mass vs. Log-distances")
+
+ggiraph(code = print(gg_graph))
+```
+5. Rename the radius into jupiter_radius, and create a new column called earth_radius
+which is 11.2 times the Jupiter radius.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+# rename() function from tidyverse with radius into jupiter_radius.
+Exo_data <- Exo_data %>% 
+          rename(jupiter_radius = radius ) 
+Exo_data <- Exo_data %>%
+          mutate(earth_radius = jupiter_radius * 11.2 )
+```
+
+6. Focus only on the rows where log-earth radius and log-period have no missing values,
+and perform kmeans with four clusters on these two columns.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+data_clustering <- Exo_data # create new df for clustering from data
+
+# Focus only on the rows where radius of Earth and period have no missing values
+data_clustering <- Exo_data  %>% drop_na(earth_radius, period)  # 2732 obs
+
+#log-radius of Earth and log-period
+data_clustering <- data_clustering %>%
+                      mutate(LogERadius = log(earth_radius),
+                             LogPeriod  = log(period))
+
+
+# data to perform Kmeans
+data_kmeans <- data_clustering %>%
+                      select(LogERadius,LogPeriod)
+
+# perform k-means
+set.seed(123)
+cluster_kmeans  <- kmeans(data_kmeans, 4)
+```
+
+7.Add the clustering labels to the dataset through a new factor column called type,
+with levels rocky, hot_jupiters, cold_gas_giants, others; similarly to https:
+//en.wikipedia.org/wiki/Exoplanet#/media/File:ExoplanetPopulations-20170616.
+png and produce the scatterplot highlighting these clusters.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+cluster_kmeans$cluster <- as.factor(cluster_kmeans$cluster)
+
+ggplot(data_kmeans, aes(LogPeriod,LogERadius ,color = cluster_kmeans$cluster)) + geom_point() +
+                                      labs(title="Clustering solutions of Exoplanets")
+
+# Using https://en.wikipedia.org/wiki/Exoplanet#/media/File:ExoplanetPopulations-20170616.png we have:
+# 1 = cold_gas_giants 
+# 2 = others 
+# 3 = Rocky 
+# 4 = hot_jupiters 
+
+data_clustering$type <- cluster_kmeans$cluster
+data_clustering$type <- as.numeric(data_clustering$type)
+
+data_clustering$type[data_clustering$type == 1] <- "cold_gas_giants"
+data_clustering$type[data_clustering$type == 2] <- "others"
+data_clustering$type[data_clustering$type == 3] <- "Rocky"
+data_clustering$type[data_clustering$type == 4] <- "hot_jupiters"
+
+table(cluster_kmeans$cluster)
+## checking
+table(data_clustering$type)
+```
+
+8.Use a violin plot to illustrate how these clusters relate to the log-mass of the exoplanet.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+# Histogram
+ggplot(data_clustering, aes(x = log(mass))) +
+                            geom_histogram(aes(color = type, fill = type), 
+                                            position = "identity", bins = 30, alpha = 0.4) +
+                                                       labs(title="Histogram of the log-mass of the exoplanet")
+
+# Violin plot
+ggplot(data_clustering, aes(x = type, y = log(mass))) + 
+  geom_violin(aes(fill = type)) + labs(title="Violin plot of log-mass of the exoplanet")
+```
+
+9. Transform r_asc and decl into two new variables that are the same varibales but
+in values of seconds. Use these as coordinates to represent a celestial map for the
+exoplanets.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+head(data_clustering$r_asc)
+head(data_clustering$decl)
+library(lubridate)
+data_clustering$r_asc <- gsub(" ", ":", data_clustering$r_asc, fixed=TRUE) # convert to hh:mm:ss
+data_clustering$r_asc <- hms(data_clustering$r_asc)
+data_clustering$r_asc_sec <- period_to_seconds(data_clustering$r_asc)
+
+# convert Declination to seconds and save as decl_sec
+data_clustering$decl <- gsub(" ", ":", data_clustering$decl, fixed=TRUE) 
+# convert to dd:mm:ss, where dd=3600ss
+data_clustering$decl <- hms(data_clustering$decl) 
+# for Decl, dd is similar to hh where :=3600ss
+data_clustering$decl_sec <- period_to_seconds(data_clustering$decl)
+# scatter plot represents a celestial map for the exoplanets
+p<- ggplot(data_clustering, aes(r_asc_sec, decl_sec, color= meth)) +
+                            geom_point() + 
+                        labs(title="Celestial Map for Exoplanets", x="Right ascension (seconds)",
+                             y="declination (seconds)")
+p+xlim(c(0, 80000))
+```
+10. Create an animated time series where multiple lines illustrate the evolution over
+time of the total number of exoplanets discovered for each method up to that year.
+```{r}
+ts.data <- Exo_data %>% group_by(meth, year) %>%  summarise(Count = length(meth)) %>%
+                          mutate(Count = cumsum(Count))
+ts.data <- na.omit(ts.data)
+ggplot(ts.data, aes(x = year, y = Count, group = meth)) + 
+  geom_line(aes(color = meth)) + 
+  geom_point(size = 2) + 
+  transition_reveal(year) + 
+  labs(title = 'Evolution Total number of exoplanets discovered by methods', y = 'Number Discovered') 
+ 
+```
+11. Create an interactive plot with Shiny where you can select the year (slider widget,
+with values 2009) and exoplanet type. Exoplanets appear as points on a scatterplot
+(log-mass vs log-distance coloured by method) only if they have already been
+discovered. If type is equal to all all types are plotted together.
+```{r cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, message=FALSE}
+library(shiny)
+
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+    
+        
+            sliderInput("YearSlider",
+                        "Select Year", min=2009,
+                        max(data_clustering$year,na.rm = TRUE),max(data_clustering$year,na.rm = TRUE),
+                        round = TRUE, sep = '', width = '100%',step = 1,ticks = FALSE)
+        ,
+        selectInput(inputId = "exo_type",
+                    label = "Type",
+                    choices = c('hot_jupiters','cold_gas_giants','Rocky','others',"all"),
+                    selected = 0),
+        
+       
+      
+        
+
+        # Show a plot of the generated distribution
+        
+plotOutput("scatter1",height = 450)
+        
+    
+)
+
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+    
+  #organize data, only include planets with known mass
+  
+    
+  
+    #create scatterplot of all year's discoveries thru selected years
+    output$scatter1 = renderPlot({
+      if(input$exo_type=="all")
+      {
+        scatter1data<-data_clustering %>%filter(., year <= input$YearSlider, !is.na(mass),
+                                     !is.na(dist))
+      }
+      else
+      {
+        scatter1data<-data_clustering %>%filter(., year <= input$YearSlider, !is.na(mass),
+                                     !is.na(dist)) %>% filter(., type == input$exo_type)
+      }
+      
+        
+        ggplot(scatter1data, aes(x = log(dist), y = log(mass),
+                                 color = meth)) +
+            geom_point(size = 3) +
+            labs(title = paste("Discoveries Through", input$YearSlider),
+                 x = "Distance of Exoplanet Star from Sun (Parsecs)",
+                 y = "Planet Mass (Jupiter Masses)",
+                 colour = NULL) 
+            
+    })
+  
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+```
+12. Fit a linear regression model where log period is the response variable and the logs
+of host_mass, host_temp and axis are the covariates (exclude rows that contain
+at least one missing value). Include an intercept term in the regression model
+```{r  warning=FALSE}
+regdata <- Exo_data[,c("period","host_mass","host_temp","axis")] 
+#Data with missing values are omitted
+regdata.complete <- na.omit(regdata)
+#We fit the linear model 
+fit<-lm(log(period)~log(host_mass)+log(host_temp)+log(axis),data = regdata)
+summary(fit)
+
+```
+Interpretation:
+
+
+14. Embed the Shiny app from (11) in your RMarkdown document.
+```{r , echo=FALSE}
+library(shiny)
+
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+    
+        
+            sliderInput("YearSlider",
+                        "Select Year", min=2009,
+                        max(data_clustering$year,na.rm = TRUE),max(data_clustering$year,na.rm = TRUE),
+                        round = TRUE, sep = '', width = '100%',step = 1,ticks = FALSE)
+        ,
+        selectInput(inputId = "exo_type",
+                    label = "Type",
+                    choices = c('hot_jupiters','cold_gas_giants','Rocky','others',"all"),
+                    selected = 0),
+        
+       
+      
+        
+
+        # Show a plot of the generated distribution
+        
+plotOutput("scatter1",height = 450)
+        
+    
+)
+
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+    
+  #organize data, only include planets with known mass
+  
+    
+  
+    #create scatterplot of all year's discoveries through the selected years
+    output$scatter1 = renderPlot({
+      if(input$exo_type=="all")
+      {
+        scatter1data<-data_clustering %>%filter(., year <= input$YearSlider, !is.na(mass),
+                                     !is.na(dist))
+      }
+      else
+      {
+        scatter1data<-data_clustering %>%filter(., year <= input$YearSlider, !is.na(mass),
+                                     !is.na(dist)) %>% filter(., type == input$exo_type)
+      }
+      
+        
+        ggplot(scatter1data, aes(x = log(dist), y = log(mass),
+                                 color = meth)) +
+            geom_point(size = 3) +
+            labs(title = paste("Discoveries Through", input$YearSlider),
+                 x = "Distance of Exoplanet Star from Sun (Parsecs)",
+                 y = "Planet Mass (Jupiter Masses)",
+                 colour = NULL) 
+            
+    })
+  
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+```
+
+ 
